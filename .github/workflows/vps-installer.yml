@@ -1,0 +1,197 @@
+name: Verify VPS link installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/install.sh'
+      - 'scripts/enroll_agent.py'
+      - 'scripts/detect_routes.py'
+      - 'scripts/tests/**'
+      - '.github/workflows/vps-installer.yml'
+  pull_request:
+    paths:
+      - 'deploy/install.sh'
+      - 'scripts/enroll_agent.py'
+      - 'scripts/detect_routes.py'
+      - 'scripts/tests/**'
+      - '.github/workflows/vps-installer.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  install-on-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check shell syntax and Python behavior
+        run: |
+          set -euo pipefail
+          bash -n deploy/install.sh
+          sh -n deploy/install-route-detector.sh
+          python3 -m unittest discover -s scripts/tests -v
+      - name: Start an isolated official Komari backend
+        run: |
+          set -euo pipefail
+          docker run -d --name yunshao-installer-test \
+            -p 127.0.0.1:25774:25774 \
+            ghcr.io/komari-monitor/komari:1.6.1@sha256:68df57a235d0d9d631f73a6c95466d1acc4220e9cae6ab2c5e009a51318937e0
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --max-time 2 http://127.0.0.1:25774/ping >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          echo 'Temporary Komari backend did not become ready.' >&2
+          exit 1
+      - name: Install, verify live metrics, and rerun without duplicate registration
+        run: |
+          sudo --preserve-env=GITHUB_WORKSPACE python3 - <<'PY'
+          import hashlib
+          import http.cookiejar
+          import json
+          import os
+          from pathlib import Path
+          import secrets
+          import stat
+          import subprocess
+          import time
+          import urllib.request
+
+          endpoint = "http://127.0.0.1:25774"
+          workspace = Path(os.environ["GITHUB_WORKSPACE"])
+          admin_password = "Test-" + secrets.token_urlsafe(24)
+          admin_key = secrets.token_urlsafe(32)
+          discovery_key = secrets.token_urlsafe(32)
+          for value in (admin_password, admin_key, discovery_key):
+              print("::add-mask::" + value, flush=True)
+          opener = urllib.request.build_opener(
+              urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+
+          def api(path, data, *, admin=False):
+              headers = {"Content-Type": "application/json"}
+              if admin:
+                  headers["Authorization"] = "Bearer " + admin_key
+              request = urllib.request.Request(endpoint + path,
+                  data=json.dumps(data).encode(), headers=headers, method="POST")
+              with opener.open(request, timeout=20) as response:
+                  return json.load(response)
+
+          def rpc(method, params=None):
+              response = api("/api/rpc2", {"jsonrpc": "2.0", "id": "ci",
+                  "method": method, "params": params or {}}, admin=True)
+              assert "error" not in response, "Temporary backend RPC failed: " + method
+              return response.get("result")
+
+          def run_installer(*arguments, success=True):
+              process = subprocess.run(["bash", str(workspace / "deploy/install.sh"),
+                  *arguments], cwd=workspace, text=True, capture_output=True, timeout=360)
+              # Never print arbitrary process output: registration credentials must
+              # stay out of CI logs, including on a failure path.
+              combined = (process.stdout or "") + (process.stderr or "")
+              for secret in (admin_password, admin_key, discovery_key):
+                  assert secret not in combined, "Installer emitted a credential"
+              if (process.returncode == 0) is not success:
+                  print(combined[-8000:], flush=True)
+              assert (process.returncode == 0) is success, (
+                  "Installer exit status did not match expectation: " + str(process.returncode))
+              print("Installer invocation completed with expected exit status.", flush=True)
+
+          def nodes():
+              return rpc("common:getNodes")
+
+          def wait_online(uuid):
+              for _ in range(60):
+                  statuses = rpc("common:getNodesLatestStatus") or {}
+                  status = statuses.get(uuid, {})
+                  if status.get("online") and status.get("ram", 0) > 0:
+                      assert isinstance(status.get("cpu"), (int, float))
+                      return
+                  time.sleep(2)
+              raise AssertionError("New Agent did not report live metrics within two minutes")
+
+          installed = api("/api/install/complete", {"username": "ci-admin",
+              "password": admin_password, "sitename": "Isolated installer CI",
+              "description": "Ephemeral test backend", "metric_dsn": "./data/metrics.db"})
+          assert installed.get("status") == "success", "Backend initialization failed"
+          login = api("/api/login", {"username": "ci-admin", "password": admin_password})
+          assert login.get("status") == "success", "Backend login failed"
+          configured = api("/api/rpc2", {"jsonrpc": "2.0", "id": "configure",
+              "method": "admin:editSettings", "params": {"private_site": True,
+                  "api_key": admin_key, "auto_discovery_key": discovery_key}})
+          assert "error" not in configured, "Backend settings were not saved"
+          for carrier in ("telecom", "unicom", "mobile"):
+              rpc("admin:addPingTask", {"name": "CI " + carrier, "target": "127.0.0.1",
+                  "type": "icmp", "interval": 60, "default_on": True, "clients": []})
+          assert not nodes(), "The isolated backend already contains nodes"
+
+          run_installer("--endpoint", endpoint, "--allow-http",
+              "--auto-discovery", discovery_key, "--name", "installer-ci")
+          config_path = Path("/opt/yunshao-agent/config.json")
+          config_bytes = config_path.read_bytes()
+          config = json.loads(config_bytes)
+          assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
+          assert config_path.stat().st_uid == 0
+          assert config["endpoint"].rstrip("/") == endpoint
+          assert config.get("token"), "Installer did not persist a node token"
+          assert config["disable_auto_update"] is True
+          assert config["disable_web_ssh"] is True
+          assert config["ignore_unsafe_cert"] is False
+          can_use_ipv6 = subprocess.run(["curl", "--ipv6", "--fail", "--silent", "--output", "/dev/null",
+              "--connect-timeout", "5", endpoint + "/ping"], capture_output=True).returncode == 0
+          expected_family = "6" if can_use_ipv6 else "4"
+          assert config["prefer_ip_version"] == expected_family, (
+              "Agent address-family preference did not match panel reachability")
+          assert discovery_key.encode() not in config_bytes
+          assert admin_key.encode() not in config_bytes
+          for root in (Path("/opt/yunshao-agent"), Path("/opt/yunshao-route")):
+              for item in root.rglob("*"):
+                  if item.is_file():
+                      saved = item.read_bytes()
+                      assert discovery_key.encode() not in saved, "Discovery key persisted after enrollment"
+                      assert admin_key.encode() not in saved, "Administrator key reached a VPS file"
+          new_nodes = nodes()
+          assert len(new_nodes) == 1, "First install did not create exactly one node"
+          uuid = next(iter(new_nodes))
+          assert "installer-ci" in new_nodes[uuid]["name"]
+          wait_online(uuid)
+          tasks = rpc("admin:getAllPingTasks")
+          assert len(tasks) == 3
+          assert all(task["default_on"] and uuid in task["clients"] for task in tasks), (
+              "Automatically registered node did not inherit default ping tasks")
+          for unit in ("yunshao-agent.service", "yunshao-route.timer"):
+              subprocess.run(["systemctl", "is-enabled", "--quiet", unit], check=True)
+              subprocess.run(["systemctl", "is-active", "--quiet", unit], check=True)
+          route_unit = subprocess.check_output(["systemctl", "cat", "yunshao-route.service"], text=True)
+          assert "/opt/yunshao-agent/config.json" in route_unit
+          assert "/opt/yunshao-route/detect_routes.py" in route_unit
+          timer_unit = subprocess.check_output(["systemctl", "cat", "yunshao-route.timer"], text=True)
+          assert "20:30:00 UTC" in timer_unit
+
+          # Repeating the one-command install must reuse the same node identity.
+          fingerprint = hashlib.sha256(config_bytes).digest()
+          rpc("admin:editClient", {"uuid": uuid, "price": 12.34,
+              "expired_at": "2040-01-01T00:00:00Z"})
+          run_installer("--endpoint", endpoint, "--allow-http", "--name", "must-not-rename")
+          assert hashlib.sha256(config_path.read_bytes()).digest() == fingerprint
+          assert set(nodes()) == {uuid}, "Rerun created a duplicate node"
+          assert "installer-ci" in nodes()[uuid]["name"], "Rerun renamed the existing node"
+          assert nodes()[uuid]["price"] == 12.34, "Rerun overwrote existing metadata"
+          assert nodes()[uuid]["expired_at"].startswith("2040-01-01")
+          # Check mode must be a read-only operation.
+          run_installer("--endpoint", endpoint, "--allow-http", "--check")
+          assert hashlib.sha256(config_path.read_bytes()).digest() == fingerprint
+          run_installer("--endpoint", "http://127.0.0.1:25773", "--allow-http",
+              "--auto-discovery", discovery_key, success=False)
+          assert hashlib.sha256(config_path.read_bytes()).digest() == fingerprint
+          assert set(nodes()) == {uuid}
+          wait_online(uuid)
+          print("Verified real enrollment, default ping binding, live metrics, private config, "
+                "route timer, idempotent rerun, and endpoint mismatch refusal.", flush=True)
+          PY
+      - name: Stop temporary services
+        if: always()
+        run: |
+          sudo systemctl stop yunshao-route.timer yunshao-route.service yunshao-agent.service || true
+          docker rm -f yunshao-installer-test >/dev/null 2>&1 || true

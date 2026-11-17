@@ -105,17 +105,32 @@ VPS 必须能主动连接面板；手机在外面也需要一条访问 NAS 的�
 
 官方参考：[Nginx 反向代理](https://www.komari.wiki/faq/nginx)。先从 VPS 和手机各访问一次面板地址，确认两端都通，再安装探针。
 
-## 3. 在 VPS 安装 Agent
+## 3. 新增 VPS 并一键接入
 
-1. 在 NAS 面板的节点管理页面新增服务器，填写显示名称。
-2. 打开该节点的 Agent 安装命令，将上报地址设置为 VPS 实际可达的 NAS 面板地址。
-3. 在这台 VPS 的 SSH 终端执行面板生成的官方安装命令。命令里的节点 Token 只用于这一个节点，不要提交到 GitHub。
-4. 只需要监控时，在官方安装脚本参数后追加 `--disable-web-ssh`，关闭探针的远程控制功能。要与本次固定版本一致，可同时追加 `--install-version 1.5.11 --disable-auto-update`。
-5. 返回面板，确认节点上线，CPU、内存、磁盘、网络速率均开始更新。
+新 VPS 可用固定版本的链接式安装命令注册为新节点，并安装 Komari Agent 和每日 VPS 回程线路检测。它适用于 Linux amd64 / arm64、使用 systemd 的主机，需要 root 权限和已安装的 `curl`，或受支持的 apt / dnf / yum 包管理器。
 
-官方 Agent 安装脚本和参数说明：[komari-agent](https://github.com/komari-monitor/komari-agent)。服务端口无需在 VPS 新开放，Agent 主动连接面板；ICMP 三网探测则需要 VPS 允许发出 ICMP。
+先在 Komari 管理后台设置中启用并复制**自动发现密钥**。这是用于创建新节点的专用密钥，不是管理员 API Key，也不能读取现有监控数据；它可以重复创建节点，因此应像其他管理凭据一样保密。执行下面命令时，替换面板地址和密钥：
 
-`agent-config.example.json` 提供另一种配置方式：复制到 VPS 的受限目录后，填入 endpoint 和该节点的 Token，再让 Agent 以 `--config /实际路径/agent-config.json` 启动。文件须允许实际运行 Agent 的服务用户读取；不要把有真实 Token 的文件回传到公开仓库。配置文件支持 `disable_web_ssh`、`month_rotate` 和 `include_nics` 等字段。现有 systemd 服务可用以下命令查看状态与近期日志：
+```sh
+bash <(curl -fsSL https://raw.githubusercontent.com/ggb15075/server-monitor-ios/agent-v1.0.0/deploy/install.sh) \
+  --endpoint https://monitor.example.com \
+  --auto-discovery 'YOUR_AUTO_DISCOVERY_KEY' \
+  --name 'server-name'
+```
+
+`--name` 可省略，默认使用主机名；Komari 会在自动发现节点名称前加 `Auto-`。用 root SSH 登录后直接运行命令。面板地址必须从这台 VPS 实际可达；公网 NAS 地址使用有效 HTTPS 和可信证书。若你的 VPS 不能访问 NAS 的 IPv6 / 代理 / VPN 入口，请先打通路径，再安装。
+
+安装成功后，Komari 自动创建该 VPS 的节点凭据，Agent 首次上报后节点会出现在面板，云哨刷新即可读取。VPS 无需开放入站服务端口；Agent 主动连接面板。要让三网延迟任务也自动绑定新节点，请在面板将相应的 ICMP Ping 任务设为默认启用，并允许 VPS 发出 ICMP。线路检测首次异步运行，以后每天北京时间 04:30 至 04:45 之间自动更新。
+
+同一台 VPS 对相同面板地址重复运行会复用本机保存的节点 Token，不会再创建节点或覆盖节点套餐、到期时间和其他元数据。已有节点若要在新主机上使用，可用该节点自己的 Agent Token 运行 `--token 'THIS_NODE_TOKEN'`；这不会调用管理员 API Key。注册请求若遇到连接中断而未确认结果，先检查面板是否已有新节点，不要连续重试，以免重复创建。
+
+链接式命令会把注册密钥短暂传给本机 shell 和安装进程；命令也可能被 shell 历史记录。不要在多人共享或不可信的终端执行，也不要把含真实密钥的命令贴到聊天或公开记录。安装器仅将新生成的该节点 Token 保存在 root 可读的 `/opt/yunshao-agent/config.json`，不会把自动发现密钥或管理员 API Key 写入 VPS。
+
+### 已有 Agent 的手动配置
+
+如不使用链接式安装，也可以在面板新增服务器、为该节点生成 Agent 安装命令，并将面板地址改为 VPS 实际可达的地址。节点 Token 只属于该节点，不要提交到 GitHub。官方 Agent 安装脚本和参数说明：[komari-agent](https://github.com/komari-monitor/komari-agent)。只需要监控时关闭 Web SSH 和自动更新。
+
+`agent-config.example.json` 提供另一种配置方式：复制到 VPS 的受限目录后，填入 endpoint 和该节点的 Token，再让 Agent 以 `--config /实际路径/agent-config.json` 启动。不要把有真实 Token 的文件回传到公开仓库。现有 systemd 服务可用以下命令查看状态与近期日志：
 
 ```sh
 systemctl status komari-agent --no-pager
@@ -126,7 +141,9 @@ journalctl -u komari-agent -n 50 --no-pager
 
 ## 4. 设置电信、联通、移动探测
 
-在 Komari 后台的 Ping / 延迟任务中分别创建“电信”“联通”“移动”任务，选择要检测的 VPS，选择协议并填写该运营商中你实际希望检测的目标。最好选同一地区的稳定目标，任务名称可加地区，例如“上海电信”。初次建议 60 秒一个样本，随后按所需精度调整。
+如果希望后续通过一键安装新增的 VPS 自动加入三网延迟探测，**先于安装创建这三项任务**，并在每项任务启用“默认开启 / default_on”。Komari 会把设为默认启用的任务自动绑定到新注册节点。已存在的节点需在任务设置里单独选中。
+
+分别创建“电信”“联通”“移动”任务，选择协议并填写该运营商中你实际希望检测的目标。最好选同一地区的稳定目标，任务名称可加地区，例如“上海电信”。初次建议 60 秒一个样本，随后按所需精度调整。
 
 三条线路表示 **VPS 到所选三网目标** 的结果，不是 iPhone 到 VPS 的延迟，也不能代表全国所有用户的线路。目标需要事先验证可以稳定响应；运营商会限速或屏蔽部分地址，没有任何固定公网 IP 可以永久保证适用，因此模板不硬编码公共目标。
 
@@ -184,7 +201,7 @@ docker compose logs --tail 80 komari
 | 现象 | 检查项 |
 | --- | --- |
 | NAS 网页打不开 | 容器是否启动、端口冲突、映射地址、NAS 防火墙 |
-| 面板正常但 VPS 离线 | VPS 能否访问 endpoint、Token 是否属于该节点、代理是否拦截请求 |
+| 面板正常但 VPS 离线 | VPS 能否访问 endpoint、Agent Token 是否属于该节点、代理是否拦截请求 |
 | 手机在家能用，外面不能用 | 使用了局域网地址；改用可达的 VPN 地址或 HTTPS 域名 |
 | 返回 401 / 403 | 私有站点需要有效面板 API Key；不能使用 Agent Token |
 | 返回 HTML 或验证码 | 填错了基础地址，或外层反代登录 / 防护页面阻挡了 API |
@@ -192,4 +209,4 @@ docker compose logs --tail 80 komari
 | 流量看起来翻倍 | 检查双向计费模式和物理 / VPN / 容器网卡重复统计 |
 | `no matching manifest` | 检查 NAS CPU 架构；模板支持 amd64 / arm64 |
 
-参考：[官方 Docker 部署](https://www.komari.wiki/install/docker)、[固定版本源码](https://github.com/komari-monitor/komari/tree/1.6.1)、[Agent 参数](https://github.com/komari-monitor/komari-agent/tree/1.5.11)。
+参考：[官方 Docker 部署](https://www.komari.wiki/install/docker)、[固定版本源码](https://github.com/komari-monitor/komari/tree/1.6.1)、[Agent 参数](https://github.com/komari-monitor/komari-agent/tree/1.5.11)、[Komari 自动发现说明](https://komari-document.pages.dev/install/agent-ad)。

@@ -4,7 +4,7 @@
 
 ## 采集
 
-已有本项目的 Komari Agent 配置（`/opt/yunshao-agent/config.json`）、Python 3、curl 和 systemd，且 VPS 为 Linux amd64 时，可从本仓库完整源码目录运行：
+新 VPS 建议通过[链接式接入安装器](DEPLOY-NAS.md#3-新增-vps-并一键接入)一次安装 Agent 与线路检测器。已有本项目的 Komari Agent 配置（`/opt/yunshao-agent/config.json`）、Python 3、curl 和 systemd，且 VPS 为 Linux amd64 时，也可从本仓库完整源码目录运行：
 
 ```sh
 sudo sh deploy/install-route-detector.sh
