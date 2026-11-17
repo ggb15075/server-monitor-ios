@@ -24,6 +24,7 @@ struct NodeDetailView: View {
                     ServerCard(node: node)
                     historySection
                     if !node.pings.isEmpty { networkSection(node) }
+                    routeSection(node)
                     informationSection(node)
                 } else {
                     VStack(spacing: 12) {
@@ -167,6 +168,51 @@ struct NodeDetailView: View {
             informationRow("节点 ID", node.id)
             if node.trafficLimitBytes != nil {
                 Text("累计流量采用探针上报的计数，统计口径：\(node.trafficLimitType)。计数可能随服务器或探针重启而改变，不代表固定自然月账单。")
+                    .font(.system(size: 10)).foregroundColor(.secondary)
+            }
+        }
+        .padding(17)
+        .background(MonitorStyle.card, in: RoundedRectangle(cornerRadius: 17))
+    }
+
+    private func routeSection(_ node: ServerNode) -> some View {
+        VStack(alignment: .leading, spacing: 13) {
+            Label("线路检测", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                .font(.system(size: 14, weight: .semibold))
+            if let report = node.routeReport, !report.paths.isEmpty {
+                HStack(spacing: 6) {
+                    Text(report.ipVersionLabel)
+                    Text("·")
+                    Text(report.directionLabel)
+                }.font(.system(size: 11)).foregroundColor(.secondary)
+                Text("检测于 \(report.checkedAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.system(size: 10)).foregroundColor(.secondary)
+                if report.isStale() {
+                    Text("检测结果已超过 48 小时，请重新检测。下方保留上次结果供参考。")
+                        .font(.system(size: 10)).foregroundColor(.orange)
+                }
+                ForEach(report.paths) { path in
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(path.carrier).fontWeight(.medium)
+                            Spacer()
+                            Text(path.displayLabel).foregroundColor(MonitorStyle.blue)
+                        }.font(.system(size: 12))
+                        Text("目标 \(path.target) · \(path.reachedTarget ? "已到达目标" : "未确认到达目标")")
+                            .font(.system(size: 10)).foregroundColor(.secondary)
+                        if !path.evidence.isEmpty {
+                            Text(path.evidence.joined(separator: " → "))
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.secondary).textSelection(.enabled)
+                        }
+                    }
+                }
+                Text("结果来自这次实际路由中的可见网络，线路可能随时间、目的地和协议变化。中间跳超时不等于链路丢包，也不能据此判断商家的线路套餐。")
+                    .font(.system(size: 10)).foregroundColor(.secondary)
+            } else {
+                Text("尚未收到线路检测结果。")
+                    .font(.system(size: 12)).foregroundColor(.secondary)
+                Text("线路需要从 VPS 发起路由探测；现有三网延迟和丢包不能单独识别 CN2、9929 或 CMI 等网络。")
                     .font(.system(size: 10)).foregroundColor(.secondary)
             }
         }

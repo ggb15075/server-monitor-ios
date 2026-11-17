@@ -238,6 +238,15 @@ struct ServerCard: View {
                     if !node.os.isEmpty { Pill(title: node.os, color: .secondary) }
                     if node.ipv4 != nil { Pill(title: "IPv4", color: MonitorStyle.mint) }
                     if node.ipv6 != nil { Pill(title: "IPv6", color: MonitorStyle.mint) }
+                    if let route = node.routeReport, !route.paths.isEmpty {
+                        ForEach(route.paths) { path in
+                            Pill(title: path.badge, color: route.isStale() ? .secondary : MonitorStyle.blue)
+                                .accessibilityLabel("线路检测，\(path.badge)，\(route.ipVersionLabel)，\(route.directionLabel)")
+                        }
+                        if route.isStale() { Pill(title: "线路待重测", color: .secondary) }
+                    } else {
+                        Pill(title: "线路未检测", color: .secondary)
+                    }
                     ForEach(Array(node.tags.enumerated()), id: \.offset) { _, tag in
                         Pill(title: tag, color: MonitorStyle.violet)
                     }

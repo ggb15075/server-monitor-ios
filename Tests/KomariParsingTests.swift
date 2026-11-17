@@ -90,6 +90,60 @@ final class KomariParsingTests: XCTestCase {
         XCTAssertEqual(rows.first?.uploadBytesPerSecond, 200)
     }
 
+    func testRouteReportReadsOnlyVersionedBlockAndPreservesMeasurementMeaning() throws {
+        let remark = "自己的公开备注\n" + routeBlock + "\n其他说明"
+        let report = try XCTUnwrap(RouteReportParser.parse(remark))
+        XCTAssertEqual(report.directionLabel, "VPS → 中国大陆（回程）")
+        XCTAssertEqual(report.ipVersionLabel, "IPv4")
+        XCTAssertEqual(report.paths.count, 2)
+        XCTAssertEqual(report.paths[0].badge, "电信163")
+        XCTAssertEqual(report.paths[0].evidence, ["AS4134"])
+        XCTAssertTrue(report.paths[0].reachedTarget)
+        XCTAssertEqual(report.paths[1].displayLabel, "无法判断")
+        XCTAssertFalse(report.paths[1].reachedTarget)
+    }
+
+    func testRouteReportDoesNotInferRoutingFromOrdinaryRemarkOrTags() throws {
+        let metadata: [String: KomariNodeDTO] = try decode(#"{"result":{"n":{"name":"Node","tags":"CN2 GIA;9929","public_remark":"商家说是CN2 GIA"}}}"#)
+        let node = try XCTUnwrap(KomariMapper.nodes(metadata, statuses: [:]).first)
+        XCTAssertNil(node.routeReport)
+        XCTAssertEqual(node.tags, ["CN2 GIA", "9929"])
+    }
+
+    func testInvalidRouteReportDoesNotBreakNodeMetrics() throws {
+        for invalid in [routeBlock.replacingOccurrences(of: "\"schema\":1", with: "\"schema\":2"),
+                        routeBlock.replacingOccurrences(of: "2026-11-17T01:00:00Z", with: "invalid"),
+                        "[yunshao-route-v1]{invalid}[/yunshao-route-v1]",
+                        routeBlock.replacingOccurrences(of: "[/yunshao-route-v1]", with: "")] {
+            XCTAssertNil(RouteReportParser.parse(invalid))
+        }
+        let metadata: [String: KomariNodeDTO] = try decode(#"{"result":{"n":{"name":"Node","public_remark":"[yunshao-route-v1]{invalid}[/yunshao-route-v1]"}}}"#)
+        let statuses: [String: KomariStatusDTO] = try decode(#"{"result":{"n":{"online":true,"cpu":7}}}"#)
+        let node = try XCTUnwrap(KomariMapper.nodes(metadata, statuses: statuses).first)
+        XCTAssertNil(node.routeReport)
+        XCTAssertEqual(node.cpuPercent, 7)
+        XCTAssertTrue(node.isOnline)
+    }
+
+    func testRouteReportFlowsFromKomariPublicRemarkIntoNode() throws {
+        let metadataData = try JSONSerialization.data(withJSONObject: ["result": ["n": ["name": "Node", "public_remark": routeBlock]]])
+        let metadata = try KomariClient.decode([String: KomariNodeDTO].self, data: metadataData)
+        let node = try XCTUnwrap(KomariMapper.nodes(metadata, statuses: [:]).first)
+        XCTAssertEqual(node.routeReport?.paths.first?.label, "电信163")
+        XCTAssertNotNil(node.routeReport?.checkedAt)
+    }
+
+    func testRouteReportBecomesStaleAfter48HoursWithoutChangingItsEvidence() throws {
+        let report = try XCTUnwrap(RouteReportParser.parse(routeBlock))
+        XCTAssertFalse(report.isStale(at: report.checkedAt.addingTimeInterval(48 * 60 * 60)))
+        XCTAssertTrue(report.isStale(at: report.checkedAt.addingTimeInterval(48 * 60 * 60 + 1)))
+        XCTAssertEqual(report.paths.first?.evidence, ["AS4134"])
+    }
+
+    private var routeBlock: String {
+        #"[yunshao-route-v1]{"schema":1,"checked_at":"2026-11-17T01:00:00Z","direction":"VPS → 中国大陆（回程）","ip_version":"IPv4","paths":[{"carrier":"电信","label":"电信163","evidence":["AS4134"],"target":"192.0.2.1","reached_target":true},{"carrier":"联通","label":"","evidence":[],"target":"192.0.2.2","reached_target":false}]}[/yunshao-route-v1]"#
+    }
+
     private func decode<T: Decodable>(_ text: String) throws -> T {
         try KomariClient.decode(T.self, data: Data(text.utf8))
     }

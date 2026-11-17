@@ -14,6 +14,7 @@ struct KomariNodeDTO: Decodable {
     var ipv4: String?
     var ipv6: String?
     var tags: String?
+    var publicRemark: String?
     var group: String?
     var weight: Int?
     var price: Double?
@@ -156,7 +157,8 @@ enum KomariMapper {
                 price: MetricMath.nonnegative(meta.price), currency: meta.currency ?? "$",
                 billingCycleDays: meta.billingCycle, expiresAt: KomariDate.parse(meta.expiredAt),
                 trafficLimitBytes: MetricMath.nonnegative(meta.trafficLimit).flatMap { $0 > 0 ? $0 : nil },
-                trafficLimitType: trafficType, trafficUsedBytes: MetricMath.traffic(up: up, down: down, type: trafficType), pings: series)
+                trafficLimitType: trafficType, trafficUsedBytes: MetricMath.traffic(up: up, down: down, type: trafficType),
+                pings: series, routeReport: RouteReportParser.parse(meta.publicRemark))
         }
     }
 

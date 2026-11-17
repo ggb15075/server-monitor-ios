@@ -56,6 +56,7 @@ struct ServerNode: Identifiable, Equatable {
     /// Agent counters, whose reset policy is configured on the server. Not necessarily monthly.
     var trafficUsedBytes: Double?
     var pings: [PingSeries] = []
+    var routeReport: RouteReport?
 }
 
 struct PingSeries: Identifiable, Equatable {

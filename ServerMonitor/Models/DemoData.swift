@@ -6,7 +6,7 @@ enum DemoData {
         let now = Date()
         return [
             ServerNode(id: "demo-los-angeles", name: "HHost.LA.China-Optimized", region: "US", os: "Debian 12",
-                       cpuName: "AMD EPYC", tags: ["电信 CN2 GIA", "联通 9929", "移动 CMI", "200 Mbps"], cpuCores: 2,
+                       cpuName: "AMD EPYC", tags: ["200 Mbps", "演示节点"], cpuCores: 2,
                        isOnline: true, lastSeen: now, cpuPercent: 0.7, memoryPercent: 11, diskPercent: 19, load1: 0,
                        uploadBytesPerSecond: 86, downloadBytesPerSecond: 651, totalUploadBytes: 547_000_000,
                        totalDownloadBytes: 2_250_000_000, uptimeSeconds: 14_400, memoryTotalBytes: 2_147_483_648,
@@ -14,7 +14,12 @@ enum DemoData {
                        ipv4: "192.0.2.1", ipv6: "2001:db8::1", price: 39, currency: "$", billingCycleDays: 365,
                        expiresAt: now.addingTimeInterval(352 * 86400), trafficLimitBytes: 400_000_000_000,
                        trafficLimitType: "sum", trafficUsedBytes: 2_797_000_000,
-                       pings: [ping(id: "ct", name: "电信", base: 159, loss: 0), ping(id: "cu", name: "联通", base: 140, loss: 1.7), ping(id: "cm", name: "移动", base: 137, loss: 0)]),
+                       pings: [ping(id: "ct", name: "电信", base: 159, loss: 0), ping(id: "cu", name: "联通", base: 140, loss: 1.7), ping(id: "cm", name: "移动", base: 137, loss: 0)],
+                       routeReport: RouteReport(checkedAt: now, direction: "VPS → 中国大陆（回程）· 示例", ipVersion: "IPv4", paths: [
+                           RoutePath(carrier: "电信", label: "电信 CN2", evidence: ["AS4809"], target: "192.0.2.10", reachedTarget: true),
+                           RoutePath(carrier: "联通", label: "联通 9929", evidence: ["AS9929"], target: "198.51.100.10", reachedTarget: true),
+                           RoutePath(carrier: "移动", label: "移动 CMI", evidence: ["AS58453"], target: "203.0.113.10", reachedTarget: true)
+                       ])),
             ServerNode(id: "demo-tokyo", name: "Tokyo · Edge 01", region: "JP", os: "Ubuntu 24.04", cpuName: "AMD EPYC",
                        tags: ["东京", "1 Gbps"], cpuCores: 4, isOnline: true, lastSeen: now,
                        cpuPercent: 18.4, memoryPercent: 42, diskPercent: 28, load1: 0.31,
