@@ -57,6 +57,7 @@ jobs:
           import stat
           import subprocess
           import time
+          import urllib.error
           import urllib.request
 
           endpoint = "http://127.0.0.1:25774"
@@ -115,7 +116,16 @@ jobs:
               "password": admin_password, "sitename": "Isolated installer CI",
               "description": "Ephemeral test backend", "metric_dsn": "./data/metrics.db"})
           assert installed.get("status") == "success", "Backend initialization failed"
-          login = api("/api/login", {"username": "ci-admin", "password": admin_password})
+          # Komari deactivates its installation-only route shortly after completion.
+          time.sleep(2)
+          try:
+              login = api("/api/login", {"username": "ci-admin", "password": admin_password})
+          except urllib.error.HTTPError as error:
+              body = error.read().decode("utf-8", errors="replace")
+              for secret in (admin_password, admin_key, discovery_key):
+                  body = body.replace(secret, "<redacted>")
+              print(f"Temporary backend login returned HTTP {error.code}: {body[:1000]}", flush=True)
+              raise
           assert login.get("status") == "success", "Backend login failed"
           configured = api("/api/rpc2", {"jsonrpc": "2.0", "id": "configure",
               "method": "admin:editSettings", "params": {"private_site": True,
