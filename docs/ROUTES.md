@@ -4,6 +4,26 @@
 
 ## 采集
 
+已有本项目的 Komari Agent 配置（`/opt/yunshao-agent/config.json`）、Python 3、curl 和 systemd，且 VPS 为 Linux amd64 时，可从本仓库完整源码目录运行：
+
+```sh
+sudo sh deploy/install-route-detector.sh
+```
+
+安装器会先运行采集器测试，下载并验证固定 SHA-256 的官方 NextTrace 1.7.6，安装 `yunshao-route.service` 和 `yunshao-route.timer`，立即发起首次检测。定时器每天北京时间 04:30 后的 15 分钟内更新，错过的定时任务在下一次启动定时器后补跑。原始测量保存在 VPS 的 `/opt/yunshao-route/results`，新文件只有 root 可读。该安装器不适用于其他架构或缺少 systemd 的系统。
+
+如果已有其他公开备注，首次执行安装器前先将它们放入 `/opt/yunshao-route/remark-prefix.txt`；更新安装时会保留此文件。使用系统服务可避免 App 退出或手机关机中断检测。
+
+手动重测与查看状态：
+
+```sh
+sudo systemctl start yunshao-route.service
+sudo systemctl status yunshao-route.service --no-pager
+sudo systemctl list-timers yunshao-route.timer --no-pager
+```
+
+`oneshot` 服务成功退出后显示 `inactive (dead)` 属于正常状态；重点查看 `Result=success` 或退出状态为 0，以及 App 中的检测时间是否更新。要停用每天检测，执行 `sudo systemctl disable --now yunshao-route.timer`。
+
 `scripts/detect_routes.py` 使用 Python 3 标准库、curl 和官方 [NextTrace 1.7.6](https://github.com/nxtrace/NTrace-core/releases/tag/v1.7.6)，不读取 SSH 密码或管理员 API Key。默认只测量；指定 `--agent-config` 时，使用该节点已经存在的 Agent endpoint / token，将线路报告上报到自己的节点。先安装并验证该版本的官方 NextTrace 二进制，再在被监控 VPS 上执行：
 
 ```sh
