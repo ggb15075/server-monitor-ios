@@ -115,7 +115,8 @@ class EnrollmentHelperTests(unittest.TestCase):
         enroll.request_json("https://monitor.example", "/api/clients/v2/rpc", body,
                             runner=capture)
         _, options = calls[0]
-        self.assertIn(json.dumps(body, separators=(",", ":")), options["input"])
+        encoded_body = json.dumps(body, separators=(",", ":"))
+        self.assertIn(enroll.curl_config_escape(encoded_body), options["input"])
         self.assertNotIn("node-token", " ".join(calls[0][0]))
 
     def test_panel_reachability_prefers_ipv6_and_falls_back_to_default_family(self):
