@@ -116,7 +116,20 @@ jobs:
               "password": admin_password, "sitename": "Isolated installer CI",
               "description": "Ephemeral test backend", "metric_dsn": "./data/metrics.db"})
           assert installed.get("status") == "success", "Backend initialization failed"
-          # Komari deactivates its installation-only route shortly after completion.
+          # Setup mode returns 404 for every other API. Wait for the normal router
+          # to finish booting before using its login or RPC endpoints.
+          for _ in range(120):
+              try:
+                  with urllib.request.urlopen(endpoint + "/api/version", timeout=3) as response:
+                      if response.status == 200:
+                          break
+              except urllib.error.HTTPError as error:
+                  if error.code != 404:
+                      raise
+                  error.close()
+              time.sleep(0.5)
+          else:
+              raise AssertionError("Komari did not leave first-run setup mode")
           time.sleep(2)
           try:
               login = api("/api/login", {"username": "ci-admin", "password": admin_password})
