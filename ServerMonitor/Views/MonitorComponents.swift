@@ -46,6 +46,10 @@ enum MonitorFormat {
     }
 
     static func flag(_ region: String) -> String {
+        let scalars = Array(region.unicodeScalars)
+        if scalars.count == 2 && scalars.allSatisfy({ (0x1F1E6...0x1F1FF).contains($0.value) }) {
+            return region
+        }
         let code = region.uppercased()
         guard code.count == 2, code.unicodeScalars.allSatisfy({ (65...90).contains(Int($0.value)) }) else {
             return "🌐"
