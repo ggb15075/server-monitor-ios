@@ -95,7 +95,7 @@ xcodegen generate
 
 随后在 Xcode 打开生成的工程。真机 Release 构建、测试和 IPA 打包参数以工作流为准，避免本地命令与云编译配置不一致。
 
-图标采用仓库内的 [SVG 源图](assets/logo.svg) 和 [原生 AppKit 生成脚本](scripts/generate_icon.swift)，构建时生成所需 PNG 尺寸，不依赖在线图像服务。
+图标采用仓库内的 [SVG 源图](assets/logo.svg) 和 [原生 CoreGraphics 生成脚本](scripts/generate_icon.swift)，构建时生成所需 PNG 尺寸，不依赖在线图像服务。
 
 ```text
 ServerMonitor/

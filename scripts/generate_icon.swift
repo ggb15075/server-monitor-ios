@@ -1,7 +1,8 @@
 #!/usr/bin/env swift
 // Native, deterministic icon generation. Run on macOS: swift scripts/generate_icon.swift
-import AppKit
+import CoreGraphics
 import Foundation
+import ImageIO
 
 struct IconSize {
     let idiom: String
@@ -28,66 +29,77 @@ let sizes: [IconSize] = [
     .init(idiom: "ipad", points: 83.5, scale: 2), .init(idiom: "ios-marketing", points: 1024, scale: 1)
 ]
 
-func color(_ hex: UInt32) -> NSColor {
-    NSColor(srgbRed: CGFloat((hex >> 16) & 255) / 255, green: CGFloat((hex >> 8) & 255) / 255,
+func color(_ hex: UInt32) -> CGColor {
+    CGColor(red: CGFloat((hex >> 16) & 255) / 255, green: CGFloat((hex >> 8) & 255) / 255,
             blue: CGFloat(hex & 255) / 255, alpha: 1)
 }
 
-func rounded(_ rect: CGRect, radius: CGFloat, fill: NSColor) {
-    fill.setFill()
-    NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+func rounded(_ context: CGContext, _ rect: CGRect, radius: CGFloat, fill: CGColor) {
+    context.setFillColor(fill)
+    context.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
+    context.fillPath()
 }
 
-func circle(_ center: CGPoint, radius: CGFloat, fill: NSColor) {
-    fill.setFill()
-    NSBezierPath(ovalIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)).fill()
+func circle(_ context: CGContext, _ center: CGPoint, radius: CGFloat, fill: CGColor) {
+    context.setFillColor(fill)
+    context.fillEllipse(in: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
 }
 
-func line(_ points: [CGPoint], width: CGFloat, stroke: NSColor) {
+func line(_ context: CGContext, _ points: [CGPoint], width: CGFloat, stroke: CGColor) {
     guard let first = points.first else { return }
-    let path = NSBezierPath()
-    path.move(to: first)
-    for point in points.dropFirst() { path.line(to: point) }
-    path.lineWidth = width
-    path.lineCapStyle = .round
-    path.lineJoinStyle = .round
-    stroke.setStroke()
-    path.stroke()
+    context.beginPath()
+    context.move(to: first)
+    for point in points.dropFirst() { context.addLine(to: point) }
+    context.setLineWidth(width)
+    context.setLineCap(.round)
+    context.setLineJoin(.round)
+    context.setStrokeColor(stroke)
+    context.strokePath()
 }
 
 func png(pixels: Int) throws -> Data {
-    guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels,
-                                        bitsPerSample: 8, samplesPerPixel: 3, hasAlpha: false, isPlanar: false,
-                                        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
-          let graphics = NSGraphicsContext(bitmapImageRep: bitmap) else {
-        throw NSError(domain: "IconGeneration", code: 1)
+    // 32-bit RGBX is a supported CoreGraphics bitmap format. A 24-bit AppKit
+    // NSBitmapImageRep cannot reliably create a graphics context on CI runners.
+    let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.noneSkipLast.rawValue
+    guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+          let context = CGContext(data: nil, width: pixels, height: pixels,
+                                  bitsPerComponent: 8, bytesPerRow: pixels * 4,
+                                  space: space, bitmapInfo: bitmapInfo) else {
+        throw NSError(domain: "IconGeneration", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: "Cannot create RGBX context at \(pixels)px"])
     }
-    NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = graphics
-    defer { NSGraphicsContext.restoreGraphicsState() }
-    let context = graphics.cgContext
     context.scaleBy(x: CGFloat(pixels) / 1024, y: CGFloat(pixels) / 1024)
     // SVG-style top-left origin keeps the native renderer and source SVG consistent.
     context.translateBy(x: 0, y: 1024)
     context.scaleBy(x: 1, y: -1)
     let mint = color(0x159D79)
-    color(0xF1F6F4).setFill()
-    NSBezierPath(rect: CGRect(x: 0, y: 0, width: 1024, height: 1024)).fill()
-    rounded(CGRect(x: 196, y: 192, width: 632, height: 640), radius: 132, fill: mint)
+    context.setFillColor(color(0xF1F6F4))
+    context.fill(CGRect(x: 0, y: 0, width: 1024, height: 1024))
+    rounded(context, CGRect(x: 196, y: 192, width: 632, height: 640), radius: 132, fill: mint)
     for top in [310.0, 492.0] {
-        rounded(CGRect(x: 294, y: top, width: 436, height: 132), radius: 35, fill: .white)
-        circle(CGPoint(x: 348, y: top + 66), radius: 17, fill: mint)
-        circle(CGPoint(x: 668, y: top + 66), radius: 11, fill: color(0x93D7BE))
-        line([CGPoint(x: 404, y: top + 66), CGPoint(x: 508, y: top + 66)], width: 18, stroke: color(0xD4EAE2))
+        rounded(context, CGRect(x: 294, y: top, width: 436, height: 132), radius: 35, fill: color(0xFFFFFF))
+        circle(context, CGPoint(x: 348, y: top + 66), radius: 17, fill: mint)
+        circle(context, CGPoint(x: 668, y: top + 66), radius: 11, fill: color(0x93D7BE))
+        line(context, [CGPoint(x: 404, y: top + 66), CGPoint(x: 508, y: top + 66)], width: 18, stroke: color(0xD4EAE2))
     }
-    line([CGPoint(x: 292, y: 724), CGPoint(x: 397, y: 724), CGPoint(x: 447, y: 660),
+    line(context, [CGPoint(x: 292, y: 724), CGPoint(x: 397, y: 724), CGPoint(x: 447, y: 660),
           CGPoint(x: 507, y: 762), CGPoint(x: 574, y: 674), CGPoint(x: 616, y: 724), CGPoint(x: 732, y: 724)],
-         width: 22, stroke: .white)
-    graphics.flushGraphics()
-    guard let data = bitmap.representation(using: .png, properties: [:]) else {
-        throw NSError(domain: "IconGeneration", code: 2)
+         width: 22, stroke: color(0xFFFFFF))
+    guard let image = context.makeImage() else {
+        throw NSError(domain: "IconGeneration", code: 2,
+                      userInfo: [NSLocalizedDescriptionKey: "Cannot create rendered image at \(pixels)px"])
     }
-    return data
+    let data = NSMutableData()
+    guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, "public.png" as CFString, 1, nil) else {
+        throw NSError(domain: "IconGeneration", code: 3,
+                      userInfo: [NSLocalizedDescriptionKey: "Cannot create PNG destination"])
+    }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else {
+        throw NSError(domain: "IconGeneration", code: 4,
+                      userInfo: [NSLocalizedDescriptionKey: "Cannot encode PNG at \(pixels)px"])
+    }
+    return data as Data
 }
 
 var images: [[String: String]] = []
