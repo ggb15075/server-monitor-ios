@@ -1,0 +1,59 @@
+name: ServerMonitor
+options:
+  bundleIdPrefix: com.ggb15075
+  deploymentTarget:
+    iOS: '16.0'
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    IPHONEOS_DEPLOYMENT_TARGET: '16.0'
+    TARGETED_DEVICE_FAMILY: '1,2'
+    MARKETING_VERSION: '1.0.0'
+    CURRENT_PROJECT_VERSION: '1'
+    CODE_SIGNING_ALLOWED: NO
+targets:
+  ServerMonitor:
+    type: application
+    platform: iOS
+    sources:
+      - path: ServerMonitor
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ggb15075.servermonitor
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: NO
+    info:
+      path: ServerMonitor/Info.plist
+      properties:
+        CFBundleDisplayName: 云哨
+        CFBundleShortVersionString: '$(MARKETING_VERSION)'
+        CFBundleVersion: '$(CURRENT_PROJECT_VERSION)'
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSLocalNetworkUsageDescription: 连接你的 NAS Komari 面板，读取服务器监控数据。
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+  ServerMonitorTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: ServerMonitor
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  ServerMonitor:
+    build:
+      targets:
+        ServerMonitor: all
+        ServerMonitorTests: [test]
+    test:
+      targets: [ServerMonitorTests]
+      gatherCoverageData: true

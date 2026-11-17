@@ -1,0 +1,24 @@
+# Paste this whole file into the ZSpace Docker Compose editor.
+# Choose a persistent project directory; ./data is stored inside that directory.
+# This is an alternative to docker-compose.yml, not an override file.
+services:
+  komari:
+    image: ghcr.io/komari-monitor/komari:1.6.1@sha256:68df57a235d0d9d631f73a6c95466d1acc4220e9cae6ab2c5e009a51318937e0
+    restart: unless-stopped
+    ports:
+      - "25774:25774"
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "5", "http://127.0.0.1:25774/ping"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

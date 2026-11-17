@@ -1,0 +1,15 @@
+.DS_Store
+.env
+*.ipa
+*.xcarchive
+*.xcresult
+build/
+DerivedData/
+ServerMonitor.xcodeproj/
+ServerMonitor/Info.plist
+ServerMonitor/Assets.xcassets/
+xcuserdata/
+*.mobileprovision
+*.p12
+*.key
+*.pem

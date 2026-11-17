@@ -1,0 +1,72 @@
+name: Build iOS TrollStore IPA
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare Xcode project
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          brew install xcodegen
+          swift scripts/generate_icon.swift
+          xcodegen generate
+      - name: Run parser and state tests
+        run: |
+          set -euo pipefail
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for a in d["devices"].values() for x in a if x["name"].startswith("iPhone")))')
+          xcodebuild test -project ServerMonitor.xcodeproj -scheme ServerMonitor -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/simulator -resultBundlePath build/TestResults.xcresult CODE_SIGNING_ALLOWED=NO
+          xcrun simctl launch "$DEVICE_ID" com.ggb15075.servermonitor --demo
+          sleep 3
+          xcrun simctl io "$DEVICE_ID" screenshot build/Dashboard.png
+      - name: Build device application
+        run: |
+          set -euo pipefail
+          xcodebuild -project ServerMonitor.xcodeproj -scheme ServerMonitor -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+      - name: Package and verify IPA
+        run: |
+          set -euo pipefail
+          mkdir -p build/package/Payload
+          cp -R build/device/Build/Products/Release-iphoneos/ServerMonitor.app build/package/Payload/
+          APP=build/package/Payload/ServerMonitor.app
+          if [ -d "$APP/Frameworks" ]; then
+            find "$APP/Frameworks" -depth \( -name '*.framework' -o -name '*.dylib' \) -exec codesign --force --sign - '{}' \;
+          fi
+          codesign --force --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+          /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.plist")" = '16.0'
+          (cd build/package && zip -qry ../YunShao-iOS16-TrollStore.ipa Payload)
+          shasum -a 256 build/YunShao-iOS16-TrollStore.ipa > build/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: YunShao-iOS16-TrollStore
+          path: |
+            build/YunShao-iOS16-TrollStore.ipa
+            build/SHA256SUMS.txt
+            build/Dashboard.png
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: TestResults
+          path: build/TestResults.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

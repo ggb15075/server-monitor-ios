@@ -1,0 +1,9 @@
+{
+  "endpoint": "https://monitor.example.com",
+  "token": "REPLACE_WITH_THIS_NODES_AGENT_TOKEN",
+  "interval": 3,
+  "disable_auto_update": true,
+  "disable_web_ssh": true,
+  "ignore_unsafe_cert": false,
+  "month_rotate": 0
+}

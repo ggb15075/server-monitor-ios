@@ -1,0 +1,22 @@
+services:
+  komari:
+    # Official 1.6.1 multi-architecture image, verified on 2026-11-17.
+    image: ${KOMARI_IMAGE:-ghcr.io/komari-monitor/komari:1.6.1@sha256:68df57a235d0d9d631f73a6c95466d1acc4220e9cae6ab2c5e009a51318937e0}
+    restart: unless-stopped
+    ports:
+      - "${KOMARI_BIND_IP:-0.0.0.0}:${KOMARI_PORT:-25774}:25774"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "5", "http://127.0.0.1:25774/ping"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
