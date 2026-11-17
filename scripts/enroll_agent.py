@@ -302,7 +302,9 @@ def check_install(endpoint: str) -> int:
 def install(endpoint: str, key: str, token: str, name: str, source_dir: Path) -> int:
     config_path = AGENT_ROOT / "config.json"
     existing = read_existing_config(config_path, endpoint)
-    new_node = existing is None
+    # Only a successful fresh registration proves that the server-side remark
+    # starts empty. A manually supplied token can belong to an existing node.
+    new_node = existing is None and not token
     if existing is not None and token and token != existing["token"]:
         raise ValueError("A different node token was supplied; existing credentials were left unchanged.")
     if existing is None:
@@ -403,6 +405,9 @@ def install(endpoint: str, key: str, token: str, name: str, source_dir: Path) ->
         if route_ready:
             run_systemctl("enable", "--now", "yunshao-route.timer")
             run_systemctl("start", "--no-block", "yunshao-route.service")
+        else:
+            run_systemctl("disable", "--now", "yunshao-route.timer")
+            run_systemctl("stop", "yunshao-route.service")
     print("YUNSHAO_VPS_INSTALLED")
     print("Refresh the existing panel in YunShao. Metrics appear after the first agent report.")
     if route_ready:

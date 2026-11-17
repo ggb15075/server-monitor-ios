@@ -124,6 +124,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/ggb15075/server-monitor-ios/
 
 同一台 VPS 对相同面板地址重复运行会复用本机保存的节点 Token，不会再创建节点或覆盖节点套餐、到期时间和其他元数据。已有节点若要在新主机上使用，可用该节点自己的 Agent Token 运行 `--token 'THIS_NODE_TOKEN'`；这不会调用管理员 API Key。注册请求若遇到连接中断而未确认结果，先检查面板是否已有新节点，不要连续重试，以免重复创建。
 
+使用已有节点 Token 且本机尚无备注前缀文件时，安装器会先运行指标采集、暂停线路上报，以保护该节点已有的公开备注。将要保留的公开备注保存到 `/opt/yunshao-route/remark-prefix.txt` 后，再运行相同安装命令启用线路检测；没有其他备注时，可创建空文件。
+
 链接式命令会把注册密钥短暂传给本机 shell 和安装进程；命令也可能被 shell 历史记录。不要在多人共享或不可信的终端执行，也不要把含真实密钥的命令贴到聊天或公开记录。安装器仅将新生成的该节点 Token 保存在 root 可读的 `/opt/yunshao-agent/config.json`，不会把自动发现密钥或管理员 API Key 写入 VPS。
 
 ### 已有 Agent 的手动配置

@@ -2,6 +2,12 @@ name: Verify VPS link installer
 
 on:
   workflow_dispatch:
+    inputs:
+      published:
+        description: 'Verify the fixed public installer URL instead of the checkout'
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main]
     paths:
@@ -46,8 +52,10 @@ jobs:
           echo 'Temporary Komari backend did not become ready.' >&2
           exit 1
       - name: Install, verify live metrics, and rerun without duplicate registration
+        env:
+          YUNSHAO_PUBLISHED_INSTALLER: ${{ inputs.published }}
         run: |
-          sudo --preserve-env=GITHUB_WORKSPACE python3 - <<'PY'
+          sudo --preserve-env=GITHUB_WORKSPACE,YUNSHAO_PUBLISHED_INSTALLER python3 - <<'PY'
           import hashlib
           import http.cookiejar
           import json
@@ -56,12 +64,22 @@ jobs:
           import secrets
           import stat
           import subprocess
+          import tempfile
           import time
           import urllib.error
           import urllib.request
 
           endpoint = "http://127.0.0.1:25774"
           workspace = Path(os.environ["GITHUB_WORKSPACE"])
+          installer_script = workspace / "deploy/install.sh"
+          published_stage = None
+          if os.environ.get("YUNSHAO_PUBLISHED_INSTALLER", "").lower() == "true":
+              published_stage = tempfile.TemporaryDirectory(prefix="yunshao-published-")
+              published_script = Path(published_stage.name) / "install.sh"
+              with urllib.request.urlopen("https://raw.githubusercontent.com/ggb15075/server-monitor-ios/agent-v1.0.0/deploy/install.sh", timeout=30) as response:
+                  published_script.write_bytes(response.read())
+              assert hashlib.sha256(published_script.read_bytes()).digest() == hashlib.sha256(installer_script.read_bytes()).digest()
+              installer_script = published_script
           admin_password = "Test-" + secrets.token_urlsafe(24)
           admin_key = secrets.token_urlsafe(32)
           discovery_key = secrets.token_urlsafe(32)
@@ -86,7 +104,7 @@ jobs:
               return response.get("result")
 
           def run_installer(*arguments, success=True):
-              process = subprocess.run(["bash", str(workspace / "deploy/install.sh"),
+              process = subprocess.run(["bash", str(installer_script),
                   *arguments], cwd=workspace, text=True, capture_output=True, timeout=360)
               # Never print arbitrary process output: registration credentials must
               # stay out of CI logs, including on a failure path.
@@ -210,8 +228,26 @@ jobs:
           assert hashlib.sha256(config_path.read_bytes()).digest() == fingerprint
           assert set(nodes()) == {uuid}
           wait_online(uuid)
+          # A token supplied for a node whose local config is absent can still
+          # have saved remarks. Reinstall metrics without erasing that text.
+          for unit in ("yunshao-route.timer", "yunshao-route.service", "yunshao-agent.service"):
+              subprocess.run(["systemctl", "stop", unit], check=True)
+          original_token = config["token"]
+          print("::add-mask::" + original_token, flush=True)
+          config_path.unlink()
+          prefix_path = Path("/opt/yunshao-route/remark-prefix.txt")
+          prefix_path.unlink()
+          saved_remark = "Existing node note kept during token-based install"
+          rpc("admin:editClient", {"uuid": uuid, "public_remark": saved_remark})
+          run_installer("--endpoint", endpoint, "--allow-http", "--token", original_token)
+          assert set(nodes()) == {uuid}, "Token-based install created a duplicate"
+          assert nodes()[uuid]["public_remark"] == saved_remark
+          assert not prefix_path.exists(), "Existing remark was assumed to be empty"
+          assert subprocess.run(["systemctl", "is-active", "--quiet", "yunshao-route.timer"]).returncode != 0
+          assert subprocess.run(["systemctl", "is-enabled", "--quiet", "yunshao-route.timer"]).returncode != 0
+          wait_online(uuid)
           print("Verified real enrollment, default ping binding, live metrics, private config, "
-                "route timer, idempotent rerun, and endpoint mismatch refusal.", flush=True)
+                "route timer, idempotent rerun, endpoint mismatch refusal, and saved remark protection.", flush=True)
           PY
       - name: Stop temporary services
         if: always()
