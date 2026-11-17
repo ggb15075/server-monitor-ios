@@ -33,6 +33,8 @@ App 不需要服务器 SSH 密码。服务器监控、历史记录和网络探�
 
 ## 获取 IPA 与巨魔安装
 
+可直接在 [Releases 下载已构建 IPA](https://github.com/ggb15075/server-monitor-ios/releases/latest)，选择 `YunShao-iOS16-TrollStore.ipa`，无需自行编译。安装说明见下面第 5 步。
+
 1. 打开 [GitHub Actions](https://github.com/ggb15075/server-monitor-ios/actions)。
 2. 选择构建工作流，在 **Run workflow** 中触发构建，或使用最近一次成功构建。提交代码后也会按工作流配置自动构建。
 3. 等待工作流显示绿色成功。进入该次运行，在页面底部 **Artifacts** 下载包含 IPA 的构建产物。下载 Artifact 通常需要登录 GitHub。
@@ -71,6 +73,8 @@ App 不需要服务器 SSH 密码。服务器监控、历史记录和网络探�
 | 刷新间隔 | 5、10、15、30 或 60 秒 |
 
 先点“测试连接”检查读取节点数量，再点“保存”。HTTPS 使用系统证书校验；自签名或过期证书需要在服务端正确配置，App 不提供跳过证书验证的开关。
+
+Komari 1.6.1 的 API Key 是后台管理级凭据，暂不支持只读 scope；云哨自身仅调用读取接口。请将 Key 保留在自己的设备中。
 
 ## 指标含义与限制
 
