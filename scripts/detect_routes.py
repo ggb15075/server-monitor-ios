@@ -26,12 +26,18 @@ TARGETS = (
     ("mobile", "移动", "211.136.192.6"),
 )
 
-# Priority is deliberate: seeing an enhanced backbone and the carrier's normal
-# domestic network is common. The label describes only an observed backbone.
-BACKBONES = {
-    "电信": (("AS4809", "电信CN2"), ("AS4134", "电信163")),
-    "联通": (("AS9929", "联通9929"), ("AS4837", "联通169")),
-    "移动": (("AS58807", "移动CMIN2"), ("AS58453", "移动CMI")),
+# A target carrier and the backbone carrying traffic to it need not match.
+# Preserve observed special backbone segments across carriers before considering
+# the target's ordinary domestic network. These labels do not prove a product tier.
+SPECIAL_BACKBONES = {
+    "AS4809": "电信CN2",
+    "AS9929": "联通9929",
+    "AS58807": "移动CMIN2",
+    "AS58453": "移动CMI",
+}
+ORDINARY_BACKBONES = {
+    "电信": (("AS4134", "电信163"),),
+    "联通": (("AS4837", "联通169"),),
 }
 
 
@@ -105,7 +111,14 @@ def parse_trace(stdout: str, carrier: str, target: str) -> dict[str, Any]:
             if asn and asn not in seen:
                 seen.add(asn)
                 path["evidence"].append(asn)
-    for asn, label in BACKBONES.get(carrier, ()):
+    observed_special = [SPECIAL_BACKBONES[asn] for asn in path["evidence"]
+                        if asn in SPECIAL_BACKBONES]
+    if observed_special:
+        # Several special backbone segments may be visible. Keep them in path
+        # observation order instead of inventing a single dominant carrier.
+        path["label"] = " + ".join(observed_special)
+        return path
+    for asn, label in ORDINARY_BACKBONES.get(carrier, ()):
         if asn in seen:
             path["label"] = label
             break

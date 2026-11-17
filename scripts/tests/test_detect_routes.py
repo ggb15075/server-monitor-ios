@@ -31,11 +31,53 @@ class RouteDetectionTests(unittest.TestCase):
         self.assertEqual(report["evidence"], ["AS4809", "AS4134"])
         self.assertTrue(report["reached_target"])
 
-    def test_other_carrier_asn_is_not_used_as_the_target_carriers_label(self):
+    def test_special_backbone_can_carry_traffic_to_another_carrier(self):
         report = routes.parse_trace(result(hop("8.8.8.8", "4809")), "联通", "210.21.196.6")
-        self.assertEqual(report["label"], "")
+        self.assertEqual(report["label"], "电信CN2")
         self.assertEqual(report["evidence"], ["AS4809"])
         self.assertFalse(report["reached_target"])
+
+    def test_telecom_tail_does_not_hide_observed_unicom_9929_transit(self):
+        # Synthetic hop addresses, with the measured ASN sequence as a regression.
+        raw = result(hop("8.8.8.8", "1054"), hop("1.1.1.1", "10099"),
+                     hop("9.9.9.9", "9929"), hop("202.96.134.133", "4134"))
+        report = routes.parse_trace(raw, "电信", "202.96.134.133")
+        self.assertEqual(report["label"], "联通9929")
+        self.assertEqual(report["evidence"], ["AS1054", "AS10099", "AS9929", "AS4134"])
+        self.assertTrue(report["reached_target"])
+
+    def test_unicom_and_mobile_domestic_tails_keep_visible_special_backbone(self):
+        for carrier, target, asns, label in [
+            ("联通", "210.21.196.6", ["1054", "10099", "9929", "4837", "17623"], "联通9929"),
+            ("移动", "211.136.192.6", ["1054", "58807", "9808", "56040"], "移动CMIN2"),
+        ]:
+            probes = [hop(f"8.8.8.{index + 1}", asn) for index, asn in enumerate(asns[:-1])]
+            probes.append(hop(target, asns[-1]))
+            with self.subTest(carrier=carrier):
+                report = routes.parse_trace(result(*probes), carrier, target)
+                self.assertEqual(report["label"], label)
+                self.assertTrue(report["reached_target"])
+
+    def test_multiple_special_backbones_preserve_path_order_without_choosing_a_tier(self):
+        raw = result(hop("8.8.8.8", "9929"), hop("1.1.1.1", "4809"),
+                     hop("202.96.134.133", "4134"))
+        report = routes.parse_trace(raw, "电信", "202.96.134.133")
+        self.assertEqual(report["label"], "联通9929 + 电信CN2")
+        self.assertNotIn("GIA", report["label"])
+
+    def test_cross_carrier_cmi_is_visible_and_cmin2_does_not_hide_cmi_segment(self):
+        raw = result(hop("8.8.8.8", "58807"), hop("1.1.1.1", "58453"),
+                     hop("202.96.134.133", "4134"))
+        report = routes.parse_trace(raw, "电信", "202.96.134.133")
+        self.assertEqual(report["label"], "移动CMIN2 + 移动CMI")
+        self.assertTrue(report["reached_target"])
+
+    def test_ordinary_other_carrier_backbone_does_not_replace_target_carrier(self):
+        raw = result(hop("8.8.8.8", "4134"), hop("210.21.196.6", "4837"))
+        report = routes.parse_trace(raw, "联通", "210.21.196.6")
+        self.assertEqual(report["label"], "联通169")
+        unknown = routes.parse_trace(result(hop("8.8.8.8", "4134")), "联通", "210.21.196.6")
+        self.assertEqual(unknown["label"], "")
 
     def test_unreachable_destination_can_still_have_observed_backbone(self):
         report = routes.parse_trace(result(hop("8.8.8.8", "AS9929"), stop_reason="max_hops"),
