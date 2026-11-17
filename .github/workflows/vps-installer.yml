@@ -145,18 +145,27 @@ jobs:
                   if error.code != 404:
                       raise
                   error.close()
+              except OSError:
+                  # The setup HTTP listener is replaced by the normal listener.
+                  # Connections can reset briefly while this transition occurs.
+                  pass
               time.sleep(0.5)
           else:
               raise AssertionError("Komari did not leave first-run setup mode")
-          time.sleep(2)
-          try:
-              login = api("/api/login", {"username": "ci-admin", "password": admin_password})
-          except urllib.error.HTTPError as error:
-              body = error.read().decode("utf-8", errors="replace")
-              for secret in (admin_password, admin_key, discovery_key):
-                  body = body.replace(secret, "<redacted>")
-              print(f"Temporary backend login returned HTTP {error.code}: {body[:1000]}", flush=True)
-              raise
+          for attempt in range(30):
+              try:
+                  login = api("/api/login", {"username": "ci-admin", "password": admin_password})
+                  break
+              except urllib.error.HTTPError as error:
+                  body = error.read().decode("utf-8", errors="replace")
+                  for secret in (admin_password, admin_key, discovery_key):
+                      body = body.replace(secret, "<redacted>")
+                  print(f"Temporary backend login returned HTTP {error.code}: {body[:1000]}", flush=True)
+                  raise
+              except OSError:
+                  if attempt == 29:
+                      raise
+                  time.sleep(0.5)
           assert login.get("status") == "success", "Backend login failed"
           configured = api("/api/rpc2", {"jsonrpc": "2.0", "id": "configure",
               "method": "admin:editSettings", "params": {"private_site": True,
