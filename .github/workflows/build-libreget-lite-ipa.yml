@@ -76,7 +76,7 @@ jobs:
           test -d "$app_path"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist" | grep -qx 'com.openselena.libreget.ioslite'
           /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$app_path/Info.plist" | grep -qx '16.0'
-          xcrun lipo -verify_arch arm64 "$app_path/LibreGetLite"
+          xcrun lipo "$app_path/LibreGetLite" -verify_arch arm64
           xcrun vtool -show-build "$app_path/LibreGetLite"
           mkdir -p "$package_dir/Payload" "$GITHUB_WORKSPACE/build"
           cp -R "$app_path" "$package_dir/Payload/"
