@@ -47,6 +47,14 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
+      - name: Test daemon-owned download file import
+        run: |
+          swiftc \
+            libreget-ios/LibreGetLite/LibreGetLite/DownloadFileStager.swift \
+            libreget-ios/tests/DownloadFileStagerFixtures.swift \
+            -o "$RUNNER_TEMP/download-stager-fixtures"
+          "$RUNNER_TEMP/download-stager-fixtures"
+
       - name: Test native media parsers
         run: |
           swiftc -D NATIVE_PARSER_FIXTURES \
@@ -55,6 +63,17 @@ jobs:
             libreget-ios/tests/NativeParserFixtures.swift \
             -o "$RUNNER_TEMP/native-parser-fixtures"
           "$RUNNER_TEMP/native-parser-fixtures"
+
+      - name: Test user Douyin share, streaming and full download
+        run: |
+          swiftc -target "$(uname -m)-apple-macosx13.0" \
+            libreget-ios/LibreGetLite/LibreGetLite/MediaModels.swift \
+            libreget-ios/LibreGetLite/LibreGetLite/ShareLinkParser.swift \
+            libreget-ios/LibreGetLite/LibreGetLite/NativeMediaParser.swift \
+            libreget-ios/LibreGetLite/LibreGetLite/DownloadFileStager.swift \
+            libreget-ios/tests/LiveDouyinSmoke.swift \
+            -o "$RUNNER_TEMP/live-douyin-smoke"
+          "$RUNNER_TEMP/live-douyin-smoke" "$RUNNER_TEMP/douyin-live"
 
       - name: Prepare embedded Python and yt-dlp
         run: python3 libreget-ios/LibreGetLite/scripts/prepare_python_runtime.py
@@ -91,6 +110,9 @@ jobs:
           test -d "$app_path"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist" | grep -qx 'com.openselena.libreget.ioslite'
           /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$app_path/Info.plist" | grep -qx '16.0'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Info.plist" | grep -qx '0.2.1'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_path/Info.plist" | grep -qx '3'
+          /usr/libexec/PlistBuddy -c 'Print :UIBackgroundModes' "$app_path/Info.plist" | grep -q 'audio'
           xcrun lipo "$app_path/LibreGetLite" -verify_arch arm64
           test -f "$app_path/PythonApp/libreget_engine.py"
           test -f "$app_path/PythonPackages/yt_dlp/__init__.py"
@@ -124,4 +146,13 @@ jobs:
             build/LibreGetLite-iOS16-TrollStore.ipa
             build/LibreGetLite-iOS16-TrollStore.ipa.sha256
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload public sample validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LibreGet-Douyin-validation
+          path: ${{ runner.temp }}/douyin-live/douyin-swift-report.json
+          if-no-files-found: ignore
           retention-days: 14
