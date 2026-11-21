@@ -2,7 +2,7 @@ name: Build LibreGet Lite TrollStore IPA
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - "libreget-ios/**"
       - ".github/workflows/build-libreget-lite-ipa.yml"
@@ -47,6 +47,21 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
+      - name: Test native media parsers
+        run: |
+          swiftc -D NATIVE_PARSER_FIXTURES \
+            libreget-ios/LibreGetLite/LibreGetLite/MediaModels.swift \
+            libreget-ios/LibreGetLite/LibreGetLite/NativeMediaParser.swift \
+            libreget-ios/tests/NativeParserFixtures.swift \
+            -o "$RUNNER_TEMP/native-parser-fixtures"
+          "$RUNNER_TEMP/native-parser-fixtures"
+
+      - name: Prepare embedded Python and yt-dlp
+        run: python3 libreget-ios/LibreGetLite/scripts/prepare_python_runtime.py
+
+      - name: Test embedded extractor integration
+        run: python3 libreget-ios/tests/engine_fixtures.py
+
       - name: Validate source and app icon
         run: |
           test -f libreget-ios/LibreGetLite/LibreGetLite.xcodeproj/project.pbxproj
@@ -77,6 +92,13 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist" | grep -qx 'com.openselena.libreget.ioslite'
           /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$app_path/Info.plist" | grep -qx '16.0'
           xcrun lipo "$app_path/LibreGetLite" -verify_arch arm64
+          test -f "$app_path/PythonApp/libreget_engine.py"
+          test -f "$app_path/PythonPackages/yt_dlp/__init__.py"
+          test -f "$app_path/PythonPackages/certifi/cacert.pem"
+          test -f "$app_path/python/lib/python3.13/encodings/__init__.py"
+          test -f "$app_path/Frameworks/Python.framework/Python"
+          xcrun lipo "$app_path/Frameworks/Python.framework/Python" -verify_arch arm64
+          xcrun otool -L "$app_path/LibreGetLite" | grep 'Python.framework/Python'
           xcrun vtool -show-build "$app_path/LibreGetLite"
           mkdir -p "$package_dir/Payload" "$GITHUB_WORKSPACE/build"
           cp -R "$app_path" "$package_dir/Payload/"
