@@ -64,6 +64,9 @@ jobs:
             -o "$RUNNER_TEMP/native-parser-fixtures"
           "$RUNNER_TEMP/native-parser-fixtures"
 
+      - name: Test app-owned streaming and iOS download recovery
+        run: python3 libreget-ios/tests/run_download_validation.py
+
       - name: Test user Douyin share, streaming and full download
         run: |
           swiftc -target "$(uname -m)-apple-macosx13.0" \
@@ -71,6 +74,7 @@ jobs:
             libreget-ios/LibreGetLite/LibreGetLite/ShareLinkParser.swift \
             libreget-ios/LibreGetLite/LibreGetLite/NativeMediaParser.swift \
             libreget-ios/LibreGetLite/LibreGetLite/DownloadFileStager.swift \
+            libreget-ios/LibreGetLite/LibreGetLite/AppOwnedStreamDownloader.swift \
             libreget-ios/tests/LiveDouyinSmoke.swift \
             -o "$RUNNER_TEMP/live-douyin-smoke"
           "$RUNNER_TEMP/live-douyin-smoke" "$RUNNER_TEMP/douyin-live"
@@ -110,8 +114,8 @@ jobs:
           test -d "$app_path"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist" | grep -qx 'com.openselena.libreget.ioslite'
           /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$app_path/Info.plist" | grep -qx '16.0'
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Info.plist" | grep -qx '0.2.1'
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_path/Info.plist" | grep -qx '3'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Info.plist" | grep -qx '0.2.2'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_path/Info.plist" | grep -qx '4'
           /usr/libexec/PlistBuddy -c 'Print :UIBackgroundModes' "$app_path/Info.plist" | grep -q 'audio'
           xcrun lipo "$app_path/LibreGetLite" -verify_arch arm64
           test -f "$app_path/PythonApp/libreget_engine.py"
@@ -122,6 +126,20 @@ jobs:
           xcrun lipo "$app_path/Frameworks/Python.framework/Python" -verify_arch arm64
           xcrun otool -L "$app_path/LibreGetLite" | grep 'Python.framework/Python'
           xcrun vtool -show-build "$app_path/LibreGetLite"
+          # Embed an exact app identity before TrollStore re-signs the package.
+          # Preserve the normal container; no broad filesystem entitlements.
+          /usr/bin/codesign --force --sign - --timestamp=none --generate-entitlement-der \
+            --entitlements libreget-ios/LibreGetLite/LibreGetLite/TrollStore.entitlements "$app_path"
+          /usr/bin/codesign --verify --strict --verbose=2 "$app_path"
+          /usr/bin/codesign --display --entitlements - --xml "$app_path" > "$RUNNER_TEMP/signed-entitlements.plist"
+          python3 - <<'PY'
+          import os, plistlib
+          from pathlib import Path
+          actual = plistlib.loads((Path(os.environ['RUNNER_TEMP']) / 'signed-entitlements.plist').read_bytes())
+          expected = plistlib.loads(Path('libreget-ios/LibreGetLite/LibreGetLite/TrollStore.entitlements').read_bytes())
+          assert actual == expected, 'Signed entitlements differ from the exact container identity'
+          assert '*' not in actual['application-identifier']
+          PY
           mkdir -p "$package_dir/Payload" "$GITHUB_WORKSPACE/build"
           cp -R "$app_path" "$package_dir/Payload/"
           (cd "$package_dir" && /usr/bin/zip -qry "$ipa_path" Payload)
@@ -146,6 +164,18 @@ jobs:
             build/LibreGetLite-iOS16-TrollStore.ipa
             build/LibreGetLite-iOS16-TrollStore.ipa.sha256
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload download recovery validation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LibreGet-download-recovery-validation
+          path: |
+            ${{ runner.temp }}/libreget-download-validation/*.json
+            ${{ runner.temp }}/libreget-download-validation/*.log
+            ${{ runner.temp }}/signed-entitlements.plist
+          if-no-files-found: ignore
           retention-days: 14
 
       - name: Upload public sample validation report
