@@ -3,7 +3,7 @@
 这是 LibreGet 的独立 iOS 应用，位于已授权仓库的 libreget-ios 目录。
 对应工作流为 Build LibreGet Lite TrollStore IPA。
 
-0.2.0（2）新增本机网页解析、格式选择、请求头传递、分轨音视频合并与 HLS 离线播放。
+0.2.1（3）修复临时下载文件保存权限，新增点击记录下载/小窗播放。0.2.0 新增本机网页解析、格式选择、请求头传递、分轨音视频合并与 HLS 离线播放。
 源码以 LibreGetLite-source.zip 归档保存；内含工程、解析桥接、依赖准备脚本、
 原生与 Python 测试以及发布说明。Python 与 yt-dlp 依赖在构建时按固定版本和 SHA-256 获取。
 
