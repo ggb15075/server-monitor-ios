@@ -1,0 +1,105 @@
+name: Build LibreGet Lite TrollStore IPA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "libreget-ios/**"
+      - ".github/workflows/build-libreget-lite-ipa.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: libreget-lite-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ipa:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Restore LibreGet Lite source
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          from zipfile import ZipFile
+          name = 'LibreGetLite/LibreGetLite/Assets.xcassets/AppIcon.appiconset/AppIcon.png'
+          with ZipFile('libreget-ios/LibreGetLite-source.zip') as source:
+              for entry in source.infolist():
+                  relative = Path(entry.filename.replace('\\', '/'))
+                  assert not relative.is_absolute() and '..' not in relative.parts, 'Unsafe source archive path'
+                  destination = Path('libreget-ios') / relative
+                  if entry.is_dir() or entry.filename.endswith(('\\', '/')):
+                      destination.mkdir(parents=True, exist_ok=True)
+                  else:
+                      destination.parent.mkdir(parents=True, exist_ok=True)
+                      destination.write_bytes(source.read(entry))
+          data = (Path('libreget-ios') / name).read_bytes()
+          assert hashlib.sha256(data).hexdigest() == '7ac17f59dbade82a4c289148c77d20e69e5fd3b9fd2a5462ec7f55d08610dd83', 'App icon checksum mismatch'
+          PY
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Validate source and app icon
+        run: |
+          test -f libreget-ios/LibreGetLite/LibreGetLite.xcodeproj/project.pbxproj
+          test -f libreget-ios/LibreGetLite/LibreGetLite/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+          plutil -lint libreget-ios/LibreGetLite/LibreGetLite/Info.plist
+
+      - name: Build unsigned iOS device app
+        run: |
+          xcodebuild \
+            -project libreget-ios/LibreGetLite/LibreGetLite.xcodeproj \
+            -scheme LibreGetLite \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath "$RUNNER_TEMP/LibreGetLiteDerivedData" \
+            ARCHS=arm64 \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package and verify TrollStore IPA
+        run: |
+          set -euo pipefail
+          app_path="$RUNNER_TEMP/LibreGetLiteDerivedData/Build/Products/Release-iphoneos/LibreGetLite.app"
+          package_dir="$RUNNER_TEMP/LibreGetLite-package"
+          ipa_path="$GITHUB_WORKSPACE/build/LibreGetLite-iOS16-TrollStore.ipa"
+          test -d "$app_path"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist" | grep -qx 'com.openselena.libreget.ioslite'
+          /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$app_path/Info.plist" | grep -qx '16.0'
+          xcrun lipo -verify_arch arm64 "$app_path/LibreGetLite"
+          xcrun vtool -show-build "$app_path/LibreGetLite"
+          mkdir -p "$package_dir/Payload" "$GITHUB_WORKSPACE/build"
+          cp -R "$app_path" "$package_dir/Payload/"
+          (cd "$package_dir" && /usr/bin/zip -qry "$ipa_path" Payload)
+          (cd "$GITHUB_WORKSPACE/build" && shasum -a 256 LibreGetLite-iOS16-TrollStore.ipa) | tee "$ipa_path.sha256"
+          unzip -tq "$ipa_path"
+          {
+            echo '## LibreGet Lite IPA'
+            echo 'Built LibreGetLite for arm64 devices with iOS 16.0 or later.'
+            echo 'Bundle identifier: com.openselena.libreget.ioslite'
+            echo 'Download the LibreGetLite-iOS16-TrollStore artifact, extract the IPA, then open it in TrollStore.'
+            echo "Source commit: $GITHUB_SHA"
+            echo '```text'
+            cat "$ipa_path.sha256"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LibreGetLite-iOS16-TrollStore
+          path: |
+            build/LibreGetLite-iOS16-TrollStore.ipa
+            build/LibreGetLite-iOS16-TrollStore.ipa.sha256
+          if-no-files-found: error
+          retention-days: 14
