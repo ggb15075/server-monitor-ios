@@ -114,8 +114,8 @@ jobs:
           test -d "$app_path"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist" | grep -qx 'com.openselena.libreget.ioslite'
           /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$app_path/Info.plist" | grep -qx '16.0'
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Info.plist" | grep -qx '0.2.2'
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_path/Info.plist" | grep -qx '4'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Info.plist" | grep -qx '0.2.3'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_path/Info.plist" | grep -qx '5'
           /usr/libexec/PlistBuddy -c 'Print :UIBackgroundModes' "$app_path/Info.plist" | grep -q 'audio'
           xcrun lipo "$app_path/LibreGetLite" -verify_arch arm64
           test -f "$app_path/PythonApp/libreget_engine.py"
